@@ -24,15 +24,19 @@ jobs:
           python manage.py check
 
   test:
+    oast:
     runs-on: ubuntu-20.04
-    needs: build
+    needs: test
     steps:
       - uses: actions/checkout@v2
 
-      - name: Setup python
-        uses: actions/setup-python@v2
+      - run: docker run --rm -v $(pwd):/src hysnsec/safety check -r requirements.txt --json > oast-results.json
+
+      - uses: actions/upload-artifact@v2
         with:
-          python-version: '3.6'
+          name: Safety
+          path: oast-results.json
+        if: always()                        # what is this for?
 
       - run: |
           pip3 install --upgrade virtualenv
