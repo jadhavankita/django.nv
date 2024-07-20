@@ -11,7 +11,88 @@ stages:
   - integration
   - prod
 
-job:
+build:
+  stage: build
+  image: python:3.6
+  before_script:
+   - pip3 install --upgrade virtualenv
+  script:
+   - virtualenv env
+   - source env/bin/activate
+   - pip install -r requirements.txt
+   - python manage.py check
+
+test:
+  stage: test
+  image: python:3.6
+  before_script:
+   - pip3 install --upgrade virtualenv
+  script:
+   - virtualenv env
+   - source env/bin/activate
+   - pip install -r requirements.txt
+   - python manage.py test taskManager
+
+# Software Component Analysis
+sca-frontend:
+  stage: build
+  image: node:alpine3.10
+  script:
+    - npm install
+    - npm install -g retire 
+    - retire --outputformat json --outputpath retirejs-report.json --severity high
+  artifacts:
+    paths: [retirejs-report.json]
+    when: always 
+    expire_in: 1 week
+  allow_failure: true   
+
+sca-backend:
   stage: build
   script:
-    - echo "I'm a job"
+    - docker pull hysnsec/safety
+    - docker run --rm -v $(pwd):/src hysnsec/safety check -r requirements.txt --json > oast-results.json
+  artifacts:
+    paths: [oast-results.json]
+    when: always 
+    expire_in: 1 week
+  allow_failure: true 
+
+# Git Secrets Scanning
+secrets-scanning:
+  stage: build
+  script:
+    - docker run -v $(pwd):/src --rm hysnsec/trufflehog filesystem --directory=/src --json | tee trufflehog-output.json
+  artifacts:
+    paths: [trufflehog-output.json]
+    when: always  
+    expire_in: 1 week
+  allow_failure: true
+
+# Static Application Security Testing
+sast:
+  stage: build
+  script:
+    - docker pull hysnsec/bandit  
+    
+    - docker run --user $(id -u):$(id -g) -v $(pwd):/src --rm hysnsec/bandit -r /src -f json -o /src/bandit-output.json
+  artifacts:
+    paths: [bandit-output.json]
+    when: always
+    expire_in: 1 week
+  allow_failure: true  
+
+# Dynamic Application Security Testing
+
+zap-baseline:
+  stage: integration
+  script:
+    - docker pull softwaresecurityproject/zap-stable:2.13.0
+    - docker run --user $(id -u):$(id -g) --rm -v $(pwd):/zap/wrk:rw softwaresecurityproject/zap-stable:2.13.0 zap-baseline.py -t https://prod-i4a741vy.lab.practical-devsecops.training -x zap-output.xml
+  after_script:
+    - docker rmi softwaresecurityproject/zap-stable:2.13.0  
+  artifacts:
+    paths: [zap-output.xml]
+    when: always 
+    expire_in: 1 week
+  allow_failure: true
